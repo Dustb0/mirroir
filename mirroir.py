@@ -3,18 +3,18 @@ import os
 import shutil
 from pathlib import Path
 from collections import defaultdict
-import concurrent.futures  # NEU: Für Multithreading
+import concurrent.futures
 
 try:
     from tqdm import tqdm
 except ImportError:
-    print("FEHLER: 'tqdm' ist nicht installiert. Führe aus: pip install tqdm")
+    print("ERROR: 'tqdm' is not installed. Run: pip install tqdm")
     exit(1)
 
 try:
     import pathspec
 except ImportError:
-    print("FEHLER: 'pathspec' ist nicht installiert. Führe aus: pip install pathspec")
+    print("ERROR: 'pathspec' is not installed. Run: pip install pathspec")
     exit(1)
 
 
@@ -23,10 +23,10 @@ def load_config(config_file="config.json"):
         with open(config_file, "r", encoding="utf-8") as f:
             return json.load(f)
     except FileNotFoundError:
-        print(f"FEHLER: Konfigurationsdatei '{config_file}' nicht gefunden.")
+        print(f"ERROR: Config file '{config_file}' not found.")
         exit(1)
     except json.JSONDecodeError:
-        print(f"FEHLER: '{config_file}' enthält ungültiges JSON.")
+        print(f"ERROR: '{config_file}' contains invalid JSON.")
         exit(1)
 
 
@@ -83,7 +83,7 @@ def create_sync_plan(source_dir: str, dest_dir: str):
     plan = {"copy": [], "delete_files": [], "delete_dirs": []}
 
     if not src.exists() or not src.is_dir():
-        print(f"\n[!] WARNUNG: Quellordner '{src}' nicht gefunden! Überspringe Job.")
+        print(f"\n[!] WARNING: Source folder '{src}' not found! Skipping job.")
         return None
 
     spec = load_gitignore(src)
@@ -91,8 +91,8 @@ def create_sync_plan(source_dir: str, dest_dir: str):
     src_total = count_source_files(src, spec)
     with tqdm(
         total=src_total,
-        desc="🔍 Analysiere Quelle",
-        unit="Datei",
+        desc="🔍 Scanning source  ",
+        unit="file",
         leave=False,
         bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}]",
     ) as pbar:
@@ -118,8 +118,8 @@ def create_sync_plan(source_dir: str, dest_dir: str):
         dst_total = count_raw_files(dst)
         with tqdm(
             total=dst_total,
-            desc="🔍 Analysiere Ziel  ",
-            unit="Datei",
+            desc="🔍 Scanning dest.   ",
+            unit="file",
             leave=False,
             bar_format="{l_bar}{bar}| {n_fmt}/{total_fmt} [{elapsed}]",
         ) as pbar:
@@ -145,13 +145,13 @@ def create_sync_plan(source_dir: str, dest_dir: str):
     return plan
 
 
-# --- NEU: Multithreading in der Ausführung ---
+# --- Multithreaded execution ---
 def execute_plan(plan):
     total_tasks = (
         len(plan["copy"]) + len(plan["delete_files"]) + len(plan["delete_dirs"])
     )
 
-    # 16 Worker-Threads sind meist ein "Sweet Spot" für externe SSDs/HDDs
+    # 16 worker threads is a good sweet spot for external SSDs/HDDs
     MAX_THREADS = 16
 
     def copy_worker(task):
@@ -161,7 +161,7 @@ def execute_plan(plan):
             shutil.copy2(src_file, dst_file)
             return None
         except Exception as e:
-            return f"Fehler beim Kopieren von {src_file.name}: {e}"
+            return f"Error copying {src_file.name}: {e}"
 
     def delete_worker(dst_file):
         try:
@@ -169,14 +169,14 @@ def execute_plan(plan):
                 dst_file.unlink()
             return None
         except Exception as e:
-            return f"Fehler beim Löschen von {dst_file.name}: {e}"
+            return f"Error deleting {dst_file.name}: {e}"
 
-    with tqdm(total=total_tasks, desc="🚀 Führe Backup aus ", unit="Aktion") as pbar:
+    with tqdm(total=total_tasks, desc="🚀 Running backup    ", unit="action") as pbar:
 
-        # ThreadPoolExecutor managt die parallelen Prozesse
+        # ThreadPoolExecutor manages the parallel workers
         with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_THREADS) as executor:
 
-            # Phase 1: Dateien kopieren (PARALLEL)
+            # Phase 1: Copy files (PARALLEL)
             futures_copy = [executor.submit(copy_worker, task) for task in plan["copy"]]
             for future in concurrent.futures.as_completed(futures_copy):
                 err = future.result()
@@ -184,7 +184,7 @@ def execute_plan(plan):
                     tqdm.write(err)
                 pbar.update(1)
 
-            # Phase 2: Dateien löschen (PARALLEL)
+            # Phase 2: Delete files (PARALLEL)
             futures_delete = [
                 executor.submit(delete_worker, f) for f in plan["delete_files"]
             ]
@@ -194,14 +194,13 @@ def execute_plan(plan):
                     tqdm.write(err)
                 pbar.update(1)
 
-        # Phase 3: Komplette Ordner löschen (SEQUENZIELL, aus Sicherheitsgründen)
-        # (Ordner löschen geht extrem schnell, das muss nicht parallelisiert werden)
+        # Phase 3: Remove directories (SEQUENTIAL — safe ordering matters here)
         for dst_dir in plan["delete_dirs"]:
             try:
                 if dst_dir.exists():
                     shutil.rmtree(dst_dir)
             except Exception as e:
-                tqdm.write(f"Fehler beim Löschen des Ordners {dst_dir.name}: {e}")
+                tqdm.write(f"Error removing folder {dst_dir.name}: {e}")
             pbar.update(1)
 
 
@@ -234,41 +233,41 @@ def display_plan_summary(plan, source, destination):
         if len(rel.parts) == 1:
             dir_stats[top_folder]["completely_deleted"] = True
 
-    print("\n ZUSAMMENFASSUNG (1. Ordnerebene):")
+    print("\n SUMMARY (top-level folders):")
     print("-" * 80)
     for folder in sorted(dir_stats.keys()):
         stats = dir_stats[folder]
         actions = []
 
         if stats["completely_deleted"]:
-            actions.append("Ordner wird inkl. Inhalt komplett gelöscht")
+            actions.append("Folder will be completely removed incl. contents")
         else:
             if stats["copy"] > 0:
-                actions.append(f"{stats['copy']} Datei(en) kopieren/aktual.")
+                actions.append(f"{stats['copy']} file(s) to copy/update")
             if stats["delete"] > 0:
-                actions.append(f"{stats['delete']} Datei(en) löschen")
+                actions.append(f"{stats['delete']} file(s) to delete")
             if stats["delete_dirs"] > 0:
-                actions.append(f"{stats['delete_dirs']} Unterordner löschen")
+                actions.append(f"{stats['delete_dirs']} subfolder(s) to remove")
 
         if actions:
             print(f"  {folder:<30} | {', '.join(actions)}")
     print("-" * 80)
 
 
-if __name__ == "__main__":
+def main():
     print("=" * 80)
-    print(" INTERAKTIVES BACKUP (MIRROR) ".center(80, "="))
+    print(" INTERACTIVE BACKUP (MIRROR) ".center(80, "="))
     print("=" * 80)
 
     config = load_config()
 
     for job in config.get("jobs", []):
-        job_name = job.get("name", "Unbenannter Job")
+        job_name = job.get("name", "Unnamed Job")
         source = job.get("source")
         destination = job.get("destination")
 
         if not source or not destination:
-            print(f"\n[!] Überspringe Job '{job_name}': Quelle oder Ziel fehlt.")
+            print(f"\n[!] Skipping job '{job_name}': source or destination missing.")
             continue
 
         print(f"\n---> {job_name} <---")
@@ -282,28 +281,32 @@ if __name__ == "__main__":
         num_del_dirs = len(plan["delete_dirs"])
 
         if num_copy == 0 and num_del_files == 0 and num_del_dirs == 0:
-            print(" ✅ Alles ist auf dem neuesten Stand. Keine Aktion erforderlich.")
+            print(" ✅ Everything is up to date. Nothing to do.")
             continue
 
         display_plan_summary(plan, source, destination)
 
         while True:
             response = (
-                input("\nMöchtest du diese Änderungen jetzt ausführen? (y/n): ")
+                input("\nProceed with these changes? (y/n): ")
                 .strip()
                 .lower()
             )
             if response in ["y", "yes"]:
                 print()
                 execute_plan(plan)
-                print("\n ✅ Job erfolgreich abgeschlossen!")
+                print("\n ✅ Job completed successfully!")
                 break
             elif response in ["n", "no"]:
-                print(" ❌ Abgebrochen durch Benutzer.")
+                print(" ❌ Aborted by user.")
                 break
             else:
-                print("Bitte antworte mit 'y' für Ja oder 'n' für Nein.")
+                print("Please answer with 'y' for yes or 'n' for no.")
 
     print("\n" + "=" * 80)
-    print(" Alle Jobs wurden abgearbeitet! ".center(80, "="))
+    print(" All jobs completed! ".center(80, "="))
     print("=" * 80)
+
+
+if __name__ == "__main__":
+    main()
