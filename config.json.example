@@ -1,0 +1,14 @@
+{
+  "jobs": [
+    {
+      "name": "My Project",
+      "source": "C:/Users/CoolUser/Documents/MyProjectA",
+      "destination": "E:/MyProjectA"
+    },
+    {
+      "name": "My Photos",
+      "source": "C:/Users/CoolUser/Documents/Photos",
+      "destination": "E:/Photos"
+    }
+  ]
+}
