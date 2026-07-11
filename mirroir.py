@@ -171,6 +171,8 @@ def execute_plan(plan):
         except Exception as e:
             return f"Error deleting {dst_file.name}: {e}"
 
+    errors = []
+
     with tqdm(total=total_tasks, desc="🚀 Running backup    ", unit="action") as pbar:
 
         # ThreadPoolExecutor manages the parallel workers
@@ -182,6 +184,7 @@ def execute_plan(plan):
                 err = future.result()
                 if err:
                     tqdm.write(err)
+                    errors.append(err)
                 pbar.update(1)
 
             # Phase 2: Delete files (PARALLEL)
@@ -192,6 +195,7 @@ def execute_plan(plan):
                 err = future.result()
                 if err:
                     tqdm.write(err)
+                    errors.append(err)
                 pbar.update(1)
 
         # Phase 3: Remove directories (SEQUENTIAL — safe ordering matters here)
@@ -200,8 +204,12 @@ def execute_plan(plan):
                 if dst_dir.exists():
                     shutil.rmtree(dst_dir)
             except Exception as e:
-                tqdm.write(f"Error removing folder {dst_dir.name}: {e}")
+                err = f"Error removing folder {dst_dir.name}: {e}"
+                tqdm.write(err)
+                errors.append(err)
             pbar.update(1)
+
+    return errors
 
 
 def display_plan_summary(plan, source, destination):
@@ -237,20 +245,22 @@ def display_plan_summary(plan, source, destination):
     print("-" * 80)
     for folder in sorted(dir_stats.keys()):
         stats = dir_stats[folder]
-        actions = []
 
         if stats["completely_deleted"]:
-            actions.append("Folder will be completely removed incl. contents")
+            lines = ["folder will be completely removed incl. contents"]
         else:
+            lines = []
             if stats["copy"] > 0:
-                actions.append(f"{stats['copy']} file(s) to copy/update")
+                lines.append(f"{stats['copy']} to update")
             if stats["delete"] > 0:
-                actions.append(f"{stats['delete']} file(s) to delete")
+                lines.append(f"{stats['delete']} to delete")
             if stats["delete_dirs"] > 0:
-                actions.append(f"{stats['delete_dirs']} subfolder(s) to remove")
+                lines.append(f"{stats['delete_dirs']} folders to remove")
 
-        if actions:
-            print(f"  {folder:<30} | {', '.join(actions)}")
+        if lines:
+            print(f"\n  {folder}")
+            for line in lines:
+                print(f"      {line}")
     print("-" * 80)
 
 
@@ -294,8 +304,11 @@ def main():
             )
             if response in ["y", "yes"]:
                 print()
-                execute_plan(plan)
-                print("\n ✅ Job completed successfully!")
+                errors = execute_plan(plan)
+                if errors:
+                    print(f"\n ⚠️  Job completed with {len(errors)} error(s) — see log above.")
+                else:
+                    print("\n ✅ Job completed successfully!")
                 break
             elif response in ["n", "no"]:
                 print(" ❌ Aborted by user.")
