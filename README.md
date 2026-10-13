@@ -40,7 +40,7 @@ cd mirroir
 
 ```bash
 mise install   # installs Python 3.12 + uv (scoped to this project)
-uv sync        # creates .venv and installs tqdm + pathspec
+mise exec -- uv sync        # creates .venv and installs tqdm + pathspec
 ```
 
 3. Copy the example config and edit it:
